@@ -1,0 +1,16 @@
+{
+  "Version": 1,
+  "ProjectMap": {
+    "6fcfa29a-1a64-4323-a264-3c443cfd1f92": {
+      "ProjectGuid": "6fcfa29a-1a64-4323-a264-3c443cfd1f92",
+      "DisplayName": "BlueSky",
+      "ColorIndex": 0
+    },
+    "454e28f5-ef7c-45ec-8f22-d07e3c9f80d3": {
+      "ProjectGuid": "454e28f5-ef7c-45ec-8f22-d07e3c9f80d3",
+      "DisplayName": "BlueSky.Updater",
+      "ColorIndex": 1
+    }
+  },
+  "NextColorIndex": 2
+}
