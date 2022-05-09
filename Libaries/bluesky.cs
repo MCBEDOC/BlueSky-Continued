@@ -11,6 +11,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace BlueSky.Libaries
 {
@@ -126,6 +128,33 @@ namespace BlueSky.Libaries
     }
     internal class Lib
     {
+        private const int PROCESS_CREATE_THREAD = 2;
+        private const int PROCESS_QUERY_INFORMATION = 1024;
+        private const int PROCESS_VM_OPERATION = 8;
+        private const int PROCESS_VM_WRITE = 32;
+        private const int PROCESS_VM_READ = 16;
+        private const uint MEM_COMMIT = 4096u;
+        private const uint MEM_RESERVE = 8192u;
+        private const uint PAGE_READWRITE = 4u;
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr OpenProcess(int dwDesiredAccess, bool bInheritHandle, int dwProcessId);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("kernel32", CharSet = CharSet.Ansi, ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr GetProcAddress(IntPtr hModule, string procName);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        private static extern IntPtr VirtualAllocEx(IntPtr hProcess, IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteProcessMemory(IntPtr hProcess, IntPtr lpBaseAddress, byte[] lpBuffer, uint nSize, out UIntPtr lpNumberOfBytesWritten);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr CreateRemoteThread(IntPtr hProcess, IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+
         static System.Windows.Forms.ProgressBar pbarm;
         static int ExtMC;
         public static async Task<bool> InstallAppx(System.Windows.Forms.ProgressBar pbar, System.Windows.Forms.Label label, string PackageFamilyName)
@@ -427,10 +456,30 @@ namespace BlueSky.Libaries
                 }
                 else if (Method == 3)
                 {
-                    return true;
+                    Process.Start("minecraft://");
+                    pbar.Value = 100;
+                    label.Text = "Minecraft has been launched successfully!";
+                    Process mc = Process.GetProcessesByName("Minecraft.Windows")[0];
+                    mc.WaitForExit();
+                    mc.Exited += ProcessEnded;
+                    if (ExtMC != 0)
+                    {
+                        await UndoApplyWindowsPatches();
+                        label.Text = "System unpatched successfully!";
+                        System.Windows.MessageBox.Show("Look like your Minecraft instance was just crashed or exited unexpectedly, but don't worry because BlueSky has unpatched your system automatically.", "Notice", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+                        return true;
+                    }
+                    else
+                    {
+                        await UndoApplyWindowsPatches();
+                        label.Text = "System unpatched successfully!";
+                        System.Windows.MessageBox.Show("System has unpatched successfully!", "Notice", MessageBoxButton.OK, MessageBoxImage.Asterisk);
+                        return true;
+                    }
                 }
                 else
                 {
+                    System.Windows.MessageBox.Show("Invalid launch method has been specified!", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return false;
                 }
             }
@@ -621,6 +670,28 @@ namespace BlueSky.Libaries
                 info.Arguments = "/K /C takeown /f " + path + " && icacls " + path + " /grant \"" + Environment.UserName + "\":F";
                 Process.Start(info);
             });
+        }
+        public static void InjectDLL(string DLL, string ProcessName)
+        {
+            Task.Delay(1000);
+            Process[] targetProcessIndex = Process.GetProcessesByName(ProcessName);
+            if (targetProcessIndex.Length != 0)
+            {
+                ApplyDLLPerm(DLL);
+                Process targetProcess = Process.GetProcessesByName(ProcessName)[0];
+                IntPtr procHandle = OpenProcess(1082, bInheritHandle: false, targetProcess.Id);
+                IntPtr loadLibraryAddr = GetProcAddress(GetModuleHandle("kernel32.dll"), "LoadLibraryA");
+                IntPtr allocMemAddress = VirtualAllocEx(procHandle, IntPtr.Zero, (uint)((DLL.Length + 1) * Marshal.SizeOf(typeof(char))), 12288u, 4u);
+                WriteProcessMemory(procHandle, allocMemAddress, Encoding.Default.GetBytes(DLL), (uint)((DLL.Length + 1) * Marshal.SizeOf(typeof(char))), out var _);
+                CreateRemoteThread(procHandle, IntPtr.Zero, 0u, loadLibraryAddr, allocMemAddress, 0u, IntPtr.Zero);
+            }
+        }
+        public static void ApplyDLLPerm(string DLLPath)
+        {
+            FileInfo InfoFile = new FileInfo(DLLPath);
+            FileSecurity fSecurity = InfoFile.GetAccessControl();
+            fSecurity.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier("S-1-15-2-1"), FileSystemRights.FullControl, InheritanceFlags.None, PropagationFlags.NoPropagateInherit, AccessControlType.Allow));
+            InfoFile.SetAccessControl(fSecurity);
         }
     }
 }
